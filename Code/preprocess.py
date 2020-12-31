@@ -3,21 +3,24 @@ import numpy as np
 import numpy.polynomial.polynomial as poly
 import matplotlib.pyplot as plt
 
-k  = np.array([[  1.15422732e+03, 0.00000000e+00, 6.71627794e+02],
- [  0.00000000e+00, 1.14818221e+03, 3.86046312e+02],
- [  0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+def cam_params():
+	k  = np.array([[  1.15422732e+03, 0.00000000e+00, 6.71627794e+02],
+	 [  0.00000000e+00, 1.14818221e+03, 3.86046312e+02],
+	 [  0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 
-dist = np.array([[ -2.42565104e-01, -4.77893070e-02, -1.31388084e-03, -8.79107779e-05, 2.20573263e-02]])
+	dist = np.array([[ -2.42565104e-01, -4.77893070e-02, -1.31388084e-03, -8.79107779e-05, 2.20573263e-02]])
 
-img = cv2.imread('../Data/Frames_project_video/frame0.jpg')
+	return k, dist
 
-yellow_lower = np.array([20, 120, 120], dtype=np.uint8)
-yellow_upper = np.array([40, 255, 255], dtype=np.uint8)
+# img = cv2.imread('../Data/Frames_project_video/frame1200.jpg')
 
-white_lower = np.array([0, 0, 225], dtype=np.uint8)
-white_upper = np.array([255, 30, 255], dtype=np.uint8)
+def color_seg(img, k, dist):
+	yellow_lower = np.array([20, 100, 100], dtype=np.uint8)
+	yellow_upper = np.array([40, 255, 255], dtype=np.uint8)
 
-def step1(img, k, dist):
+	white_lower = np.array([0, 0, 225], dtype=np.uint8)
+	white_upper = np.array([255, 30, 255], dtype=np.uint8)
+	
 	undist = cv2.undistort(img, k, dist, None, k)
 	denoise = cv2.fastNlMeansDenoisingColored(undist,None,10,10,7,21)
 	gray = cv2.cvtColor(denoise, cv2.COLOR_BGR2GRAY)
@@ -34,78 +37,136 @@ def step1(img, k, dist):
 	# print("Yellow in image", np.round(yellow_ratio*100, 2))
 	return gray, hsv, mask_yellow, mask_white, combined_mask
 
-gray, hsv, mask_yellow, mask_white, combined_mask = step1(img, k, dist)
+def BirdEyesViewUtils(combined_mask):
+	ROI = combined_mask[400 : combined_mask.shape[0], 0 : combined_mask.shape[1]]
+
+	pts_src = np.load('points.npy')
+	pts_src = np.float32(pts_src)
+	pts_dst = np.float32([(0, 0), (199, 0), (199, 199), (0, 199)])
+
+	M = cv2.getPerspectiveTransform(pts_src, pts_dst)
+	invM = cv2.getPerspectiveTransform(pts_dst, pts_src)
+
+	im_out = cv2.warpPerspective(ROI, M, (200, 200))
+
+	return im_out, invM
+
+def top_regions(left, im_out):
+	index = []
+
+	for x in left:
+		for y in range(im_out.shape[0]):
+			if im_out[y, x[0]] > 0:
+				index.append((y, x[0]))
+
+	index = np.asarray(index)
+
+	return index
 
 
-# gray = np.hstack((gray1, gray2, gray3, gray4))
-# gray = cv2.resize(gray, (1500, 200))
+def LaneCandidates(im_out):
+	hist = np.sum(im_out, axis=0)
+	midpoint = np.int(hist.shape[0] // 2)
 
-ROI = combined_mask[400 : combined_mask.shape[0], 0 : combined_mask.shape[1]]
+	left_top_regions = np.argwhere(hist[:midpoint]>10)
+	right_top_regions = np.argwhere(hist[midpoint:]>10) + midpoint
 
-pts_src = np.load('points.npy')
-pts_src = np.float32(pts_src)
-# print(pts_src)
-pts_dst = np.float32([(0, 0), (200, 0), (0, 200), (200, 200)])
+	left_index = top_regions(left_top_regions, im_out)
+	right_index = top_regions(right_top_regions, im_out)
 
-h, status = cv2.findHomography(pts_src, pts_dst)
-    
-im_out = cv2.warpPerspective(ROI, h, (200, 200))
+	# out_img = np.dstack((im_out, im_out, im_out))
 
-# example = im_out[im_out.shape[0] // 2:, :]
+	# left_index = []
+	# right_index = []
 
-hist = np.sum(im_out, axis=0)
-midpoint = np.int(hist.shape[0] // 2)
+	# for x in left_top_regions:
+	# 	for y in range(im_out.shape[0]):
+	# 		if im_out[y, x[0]] > 0:
+	# 			left_index.append((y, x[0]))
 
-left_top_regions = np.argwhere(hist[:midpoint]>10)
-right_top_regions = np.argwhere(hist[midpoint:]>10) + midpoint
+	# left_index = np.asarray(left_index)
 
-out_img = np.dstack((im_out, im_out, im_out))
+	# right_index = []
 
-left_index = []
-right_index = []
+	# for x in right_top_regions:
+	# 	for y in range(im_out.shape[0]):
+	# 		if im_out[y, x[0]] > 0:
+	# 			right_index.append((y, x[0]))
 
-for x in left_top_regions:
-	for y in range(im_out.shape[0]):
-		if im_out[y, x[0]] > 0:
-			left_index.append((y, x[0]))
-
-left_index = np.asarray(left_index)
+	# right_index = np.asarray(right_index)
+	return left_index, right_index
 
 
-for x in right_top_regions:
-	for y in range(im_out.shape[0]):
-		if im_out[y, x[0]] > 0:
-			right_index.append((y, x[0]))
+def poly_fit(img, points):
+	x = points[:, 1]
+	y = points[:, 0]
+	coefs = np.polyfit(y, x, 2)
+	ploty = np.linspace(0, img.shape[0] - 1, img.shape[0])
+	fitx = coefs[0] * ploty ** 2 + coefs[1] * ploty + coefs[2]
+	return fitx, ploty
 
-right_index = np.asarray(right_index)
+def region(out_img, left_index, right_index):
+	left_fitx, left_ploty = poly_fit(out_img, left_index)
+	right_fitx, right_ploty = poly_fit(out_img, right_index)
 
-left_x = left_index[::-1, 1]
-left_y = left_index[:, 0]
+	left_fitx, left_ploty = np.int32(left_fitx), np.int32(left_ploty)
+	right_fitx, right_ploty = np.int32(right_fitx), np.int32(right_ploty)
 
-f = np.poly1d(np.polyfit(left_x, left_y, 2))
-t = np.linspace(np.min(left_x), np.max(left_x), 100)
+	region = np.array([[left_fitx[0], left_ploty[0]], [left_fitx[-1], left_ploty[-1]], [right_fitx[-1], right_ploty[-1]], [right_fitx[0], right_ploty[0]]])
 
-plt.style.use('dark_background')
-fig, ax = plt.subplots(1, 4, figsize=(20,6))
+	return region
 
-ax[0].imshow(ROI, cmap='gray')
-# ax[0].axis("off")
+# k, dist = cam_params()
+# gray, hsv, mask_yellow, mask_white, combined_mask = color_seg(img, k, dist)
 
-ax[1].imshow(im_out, cmap='gray')
-# ax[1].axis("off")
+# im_out, invM = BirdEyesViewUtils(combined_mask)
 
-ax[2].plot(hist)
+# left_index, right_index = LaneCandidates(im_out)
 
-ax[3].imshow(out_img, cmap='gray')
-ax[3].plot(left_index[:, 1], left_index[:, 0], '.', color='red')
-ax[3].plot(right_index[:, 1], right_index[:, 0], '+', color='blue')
-ax[3].plot(t, f(t), '-')
+# out_img = np.dstack((im_out, im_out, im_out))
 
-plt.show()
+# region = region(out_img, left_index, right_index)
+
+# cv2.fillConvexPoly(out_img, region, (200, 200, 0))
+
+# ROI = img[400 : img.shape[0], 0 : img.shape[1]]
+
+# rev_im_out = cv2.warpPerspective(out_img, invM, (ROI.shape[1], ROI.shape[0]))
+
+# frame = cv2.addWeighted(rev_im_out, 0.3, ROI, 0.7, 0)
+
+# plt.style.use('dark_background')
+# fig, ax = plt.subplots(1, 4, figsize=(20,6))
+
+# ax[0].imshow(im_out, cmap='gray')
+
+# ax[1].plot(hist)
+
+# ax[2].imshow(out_img, cmap='gray')
+# ax[2].plot(left_index[:, 1], left_index[:, 0], '.', color='red',  markersize=3)
+# ax[2].plot(right_index[:, 1], right_index[:, 0], '+', color='blue',  markersize=3)
+
+# ax[3].imshow(out_img, cmap='gray')
+# ax[3].plot(left_index[:, 1], left_index[:, 0], '.', color='red',  markersize=3)
+# ax[3].plot(right_index[:, 1], right_index[:, 0], '+', color='blue',  markersize=3)
+# ax[3].plot(left_fitx, left_ploty, 'g-')
+# ax[3].plot(right_fitx, right_ploty, 'g-')
+# ax[3].plot(left_fitx[0], left_ploty[0], 'b*', left_fitx[-1], left_ploty[-1], 'bo', markersize=5)
 
 
-# cv2.imshow('ROI', ROI)
-# cv2.imshow('Birds eye view', out_img)
+# plt.show()
+
+# for i in left_index:
+# 	cv2.circle(out_img, (i[1], i[0]), 3, (0, 0, 255), -1)
+
+# for i in right_index:
+# 	cv2.circle(out_img, (i[1], i[0]), 3, (255, 0, 0), -1)
+
+# cv2.imshow('Main frame', img)
+# cv2.imshow('ROI', frame)
+
+# cv2.imshow('Yellow', combined_mask)
+# cv2.imshow('Inverse', rev_im_out)
 
 # while (1):
 # 	k = cv2.waitKey(1) & 0xFF
