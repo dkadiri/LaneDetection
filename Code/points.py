@@ -10,7 +10,7 @@ def draw_circle(event,x,y,flags,param):
         ix,iy = x,y
 
 # Create a black image, a window and bind the function to window
-img = cv2.imread('ROI.jpg')
+img = cv2.imread('../Data/Frames_project_video/frame0.jpg')
 cv2.namedWindow('image')
 cv2.setMouseCallback('image',draw_circle)
 
