@@ -18,4 +18,4 @@ In this implementation, I applied few computer vision techniques to detect the r
 	- Lane Curvature and Turn Prediction
 	- Warping back the Lane area
 
-![Pipeline](figs/Pipeline.jpg)
+![Pipeline](figs/PIPELINE.jpg)
